@@ -36,6 +36,7 @@ import de.bluecolored.bluemap.core.util.Direction;
 import lombok.Getter;
 
 import java.io.IOException;
+import java.util.Dictionary;
 import java.util.EnumMap;
 
 @SuppressWarnings({"FieldMayBeFinal", "FieldCanBeLocal"})
@@ -101,6 +102,10 @@ public class Element {
         for (var face : faces.values())  {
             face.optimize(resourcePack);
         }
+    }
+
+    public <K> Dictionary<K, Face> getFaces() {
+        return null;
     }
 
     static class Adapter extends AbstractTypeAdapterFactory<Element> {

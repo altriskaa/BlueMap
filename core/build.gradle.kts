@@ -1,9 +1,11 @@
 plugins {
     bluemap.base
+    id("org.sonarqube") version "6.0.1.5171"
+
 }
 
 dependencies {
-    api ( "de.bluecolored:bluemap-api" )
+    api ( "de.bluecolored:bluemap-api:2.7.4" )
 
     api ( libs.aircompressor )
     api ( libs.bluenbt )
@@ -18,8 +20,14 @@ dependencies {
 
     annotationProcessor ( libs.lombok )
 
+    testCompileOnly(libs.lombok)
+    testAnnotationProcessor(libs.lombok)
+
+
     // tests
     testImplementation ( libs.junit.core )
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.junit.jupiter)
     testRuntimeOnly ( libs.junit.engine )
     testRuntimeOnly ( libs.lombok )
     testAnnotationProcessor ( libs.lombok )
@@ -64,5 +72,14 @@ publishing {
                 }
             }
         }
+    }
+}
+
+sonar {
+    properties {
+        property("sonar.projectKey", "BlueMap")
+        property("sonar.projectName", "BlueMap")
+        property("sonar.host.url", "http://localhost:9000")
+        property("sonar.token", "sqp_7570465a6be1843aa7780aa375a811ac882f2b55") // Ganti dengan token asli
     }
 }

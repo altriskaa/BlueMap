@@ -5,6 +5,8 @@ bstats = "2.2.1"
 configurate = "4.1.2"
 junit = "5.8.2"
 spongegradle = "2.2.0"
+mockito = "5.11.0"
+
 
 [libraries]
 adventure-api = { module = "net.kyori:adventure-api", version.ref = "adventure" }
@@ -31,6 +33,9 @@ junit-core = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit"
 junit-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
 lombok = { module = "org.projectlombok:lombok", version = "1.18.32" }
 lz4 = { module = "org.lz4:lz4-java", version = "1.8.0" }
+mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
+mockito-junit-jupiter = { module = "org.mockito:mockito-junit-jupiter", version = "5.18.0" }
+
 
 [plugins]
 cursegradle = { id = "com.matthewprenger.cursegradle", version = "1.4.0" }
