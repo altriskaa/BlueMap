@@ -169,13 +169,69 @@ public class ResourceModelRenderer implements BlockRenderer {
     }
 
     private final VectorM3f faceRotationVector = new VectorM3f(0, 0, 0);
+
+    // =================================================================================================================
+    // region ## REFACTORED createElementFace AND HELPERS ##
+    //
+    // Code Smell Code [java:S6541] Brain Method
+    // single-responsibility methods to reduce complexity and improve readability.
+    // =================================================================================================================
+
+    /**
+     * A simple data class to hold sky and block light values together.
+     */
+    private static class FaceLight {
+        final int skyLight;
+        final int blockLight;
+
+        public FaceLight(int skyLight, int blockLight) {
+            this.skyLight = skyLight;
+            this.blockLight = blockLight;
+        }
+    }
+
+    /**
+     * Main method to create a face of a model element. It now orchestrates calls to helper methods.
+     */
     private void createElementFace(Element element, Direction faceDir, VectorM3f c0, VectorM3f c1, VectorM3f c2, VectorM3f c3) {
         Face face = element.getFaces().get(faceDir);
         if (face == null) return;
 
-        Vector3i faceDirVector = faceDir.toVector();
+        // --- Step 1: Lighting & Culling ---
+        FaceLight faceLight = calculateLight(faceDir);
+        if (shouldRemoveInCave(faceLight)) return;
 
-        // light calculation
+        calculateFaceRotationVector(element, faceDir); // Sets the field faceRotationVector
+        if (shouldCullFace(face, faceRotationVector)) return;
+
+        // --- Step 2: Initialize Model and Set Positions ---
+        blockModel.initialize();
+        blockModel.add(2); // 2 triangles per face
+        int face1 = blockModel.getStart();
+        int face2 = face1 + 1;
+        setFacePositions(face1, face2, c0, c1, c2, c3);
+
+        // --- Step 3: Material and Texture ---
+        ResourcePath<Texture> texturePath = face.getTexture().getTexturePath(modelResource.getTextures()::get);
+        setTextureForFaces(face1, face2, texturePath);
+
+        // --- Step 4: UVs and Tinting ---
+        VectorM2f[] finalUvs = calculateUvCoordinates(face, faceDir);
+        setUvsForFaces(face1, face2, finalUvs);
+        applyFaceTint(face, face1, face2);
+
+        // --- Step 5: Light and Ambient Occlusion ---
+        applyLightToFaces(face1, face2, faceLight, element.getLightEmission());
+        applyAmbientOcclusion(face1, face2, c0, c1, c2, c3, faceDir);
+
+        // --- Step 6: Update Final Map Color ---
+        updateMapColor(texturePath, faceRotationVector, faceLight);
+    }
+
+    /**
+     * Calculates the effective sunlight and blocklight for a face.
+     */
+    private FaceLight calculateLight(Direction faceDir) {
         ExtendedBlock facedBlockNeighbor = getRotationRelativeBlock(faceDir);
         LightData blockLightData = block.getLightData();
         LightData facedLightData = facedBlockNeighbor.getLightData();
@@ -183,13 +239,27 @@ public class ResourceModelRenderer implements BlockRenderer {
         int sunLight = Math.max(blockLightData.getSkyLight(), facedLightData.getSkyLight());
         int blockLight = Math.max(blockLightData.getBlockLight(), facedLightData.getBlockLight());
 
-        // filter out faces that are in a "cave" that should not be rendered
-        if (
-                block.isRemoveIfCave() &&
-                (renderSettings.isCaveDetectionUsesBlockLight() ? Math.max(blockLight, sunLight) : sunLight) == 0
-        ) return;
+        return new FaceLight(sunLight, blockLight);
+    }
 
-        // calculate faceRotationVector
+    /**
+     * Checks if the face should be removed based on cave-rendering settings.
+     */
+    private boolean shouldRemoveInCave(FaceLight faceLight) {
+        if (!block.isRemoveIfCave()) return false;
+
+        int lightLevel = renderSettings.isCaveDetectionUsesBlockLight()
+                ? Math.max(faceLight.blockLight, faceLight.skyLight)
+                : faceLight.skyLight;
+
+        return lightLevel == 0;
+    }
+
+    /**
+     * Calculates the rotated direction vector for a face and stores it in the class field `faceRotationVector`.
+     */
+    private void calculateFaceRotationVector(Element element, Direction faceDir) {
+        Vector3i faceDirVector = faceDir.toVector();
         faceRotationVector.set(
                 faceDirVector.getX(),
                 faceDirVector.getY(),
@@ -197,154 +267,162 @@ public class ResourceModelRenderer implements BlockRenderer {
         );
         faceRotationVector.rotateAndScale(element.getRotation().getMatrix());
         makeRotationRelative(faceRotationVector);
+    }
 
-        // face culling
-        if (renderSettings.isRenderTopOnly() && faceRotationVector.y < 0.01) return;
+    /**
+     * Determines if a face should be culled based on its direction or cullface properties.
+     */
+    private boolean shouldCullFace(Face face, VectorM3f faceRotationVec) {
+        if (renderSettings.isRenderTopOnly() && faceRotationVec.y < 0.01) return true;
+
         if (face.getCullface() != null) {
             ExtendedBlock b = getRotationRelativeBlock(face.getCullface());
             BlockProperties p = b.getProperties();
-            if (p.isCulling()) return;
-            if (p.getCullingIdentical() && b.getBlockState().equals(block.getBlockState())) return;
+            if (p.isCulling()) return true;
+            return p.getCullingIdentical() && b.getBlockState().equals(block.getBlockState());
         }
 
-        // initialize the faces
-        blockModel.initialize();
-        blockModel.add(2);
+        return false;
+    }
 
+    /**
+     * Sets the vertex positions for the two triangles that make up the face.
+     */
+    private void setFacePositions(int face1, int face2, VectorM3f c0, VectorM3f c1, VectorM3f c2, VectorM3f c3) {
         TileModel tileModel = blockModel.getTileModel();
-        int face1 = blockModel.getStart();
-        int face2 = face1 + 1;
+        tileModel.setPositions(face1, c0.x, c0.y, c0.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z);
+        tileModel.setPositions(face2, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, c3.x, c3.y, c3.z);
+    }
 
-        // ####### positions
-        tileModel.setPositions(face1,
-                c0.x, c0.y, c0.z,
-                c1.x, c1.y, c1.z,
-                c2.x, c2.y, c2.z
-        );
-        tileModel.setPositions(face2,
-                c0.x, c0.y, c0.z,
-                c2.x, c2.y, c2.z,
-                c3.x, c3.y, c3.z
-        );
-
-        // ####### texture
-        ResourcePath<Texture> texturePath = face.getTexture().getTexturePath(modelResource.getTextures()::get);
+    /**
+     * Sets the material (texture) for the face's triangles.
+     */
+    private void setTextureForFaces(int face1, int face2, ResourcePath<Texture> texturePath) {
         int textureId = textureGallery.get(texturePath);
-        tileModel.setMaterialIndex(face1, textureId);
-        tileModel.setMaterialIndex(face2, textureId);
+        blockModel.getTileModel().setMaterialIndex(face1, textureId);
+        blockModel.getTileModel().setMaterialIndex(face2, textureId);
+    }
 
-        // ####### UV
+    /**
+     * Calculates the final UV coordinates, accounting for face and UV-lock rotations.
+     */
+    private VectorM2f[] calculateUvCoordinates(Face face, Direction faceDir) {
         Vector4f uvRaw = face.getUv();
-        float
-                uvx = uvRaw.getX() / 16f,
-                uvy = uvRaw.getY() / 16f,
-                uvz = uvRaw.getZ() / 16f,
-                uvw = uvRaw.getW() / 16f;
+        rawUvs[0].set(uvRaw.getX() / 16f, uvRaw.getW() / 16f);
+        rawUvs[1].set(uvRaw.getZ() / 16f, uvRaw.getW() / 16f);
+        rawUvs[2].set(uvRaw.getZ() / 16f, uvRaw.getY() / 16f);
+        rawUvs[3].set(uvRaw.getX() / 16f, uvRaw.getY() / 16f);
 
-        rawUvs[0].set(uvx, uvw);
-        rawUvs[1].set(uvz, uvw);
-        rawUvs[2].set(uvz, uvy);
-        rawUvs[3].set(uvx, uvy);
-
-        // face-rotation
         int rotationSteps = Math.floorDiv(face.getRotation(), 90) % 4;
         if (rotationSteps < 0) rotationSteps += 4;
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 4; i++) {
             uvs[i] = rawUvs[(rotationSteps + i) % 4];
+        }
 
-        // UV-Lock counter-rotation
-        float uvRotation = 0f;
         if (variant.isUvlock() && variant.isTransformed()) {
+            Vector3i faceDirVector = faceDir.toVector();
             float xRotSin = TrigMath.sin(variant.getX() * TrigMath.DEG_TO_RAD);
             float xRotCos = TrigMath.cos(variant.getX() * TrigMath.DEG_TO_RAD);
 
-            uvRotation =
-                    variant.getY() * (faceDirVector.getY() * xRotCos + faceDirVector.getZ() * xRotSin) +
+            float uvRotation = variant.getY() * (faceDirVector.getY() * xRotCos + faceDirVector.getZ() * xRotSin) +
                     variant.getX() * (1 - faceDirVector.getY());
-        }
 
-        // rotate uv's
-        if (uvRotation != 0){
-            uvRotation = (float)(uvRotation * TrigMath.DEG_TO_RAD);
-            float cx = TrigMath.cos(uvRotation), cy = TrigMath.sin(uvRotation);
-            for (VectorM2f uv : uvs) {
-                uv.translate(-0.5f, -0.5f);
-                uv.rotate(cx, cy);
-                uv.translate(0.5f, 0.5f);
+            if (uvRotation != 0) {
+                uvRotation = (float)(uvRotation * TrigMath.DEG_TO_RAD);
+                float cx = TrigMath.cos(uvRotation), cy = TrigMath.sin(uvRotation);
+                for (VectorM2f uv : uvs) {
+                    uv.translate(-0.5f, -0.5f).rotate(cx, cy).translate(0.5f, 0.5f);
+                }
             }
         }
 
-        tileModel.setUvs(face1,
-                uvs[0].x, uvs[0].y,
-                uvs[1].x, uvs[1].y,
-                uvs[2].x, uvs[2].y
-        );
+        return uvs;
+    }
 
-        tileModel.setUvs(face2,
-                uvs[0].x, uvs[0].y,
-                uvs[2].x, uvs[2].y,
-                uvs[3].x, uvs[3].y
-        );
+    /**
+     * Sets the UV coordinates for the face's triangles.
+     */
+    private void setUvsForFaces(int face1, int face2, VectorM2f[] finalUvs) {
+        TileModel tileModel = blockModel.getTileModel();
+        tileModel.setUvs(face1, finalUvs[0].x, finalUvs[0].y, finalUvs[1].x, finalUvs[1].y, finalUvs[2].x, finalUvs[2].y);
+        tileModel.setUvs(face2, finalUvs[0].x, finalUvs[0].y, finalUvs[2].x, finalUvs[2].y, finalUvs[3].x, finalUvs[3].y);
+    }
 
-
-        // ####### face-tint
+    /**
+     * Applies tint color to the model faces if required.
+     */
+    private void applyFaceTint(Face face, int face1, int face2) {
+        TileModel tileModel = blockModel.getTileModel();
         if (face.getTintindex() >= 0) {
-            if (tintColor.a < 0) {
+            if (tintColor.a < 0) { // Lazy load tint color
                 blockColorCalculator.getBlockColor(block, tintColor);
             }
-
             tileModel.setColor(face1, tintColor.r, tintColor.g, tintColor.b);
             tileModel.setColor(face2, tintColor.r, tintColor.g, tintColor.b);
         } else {
             tileModel.setColor(face1, 1f, 1f, 1f);
             tileModel.setColor(face2, 1f, 1f, 1f);
         }
+    }
 
-        // ####### blocklight
-        int emissiveBlockLight = Math.max(blockLight, element.getLightEmission());
+    /**
+     * Applies light data to the model faces.
+     */
+    private void applyLightToFaces(int face1, int face2, FaceLight faceLight, int lightEmission) {
+        TileModel tileModel = blockModel.getTileModel();
+        int emissiveBlockLight = Math.max(faceLight.blockLight, lightEmission);
         tileModel.setBlocklight(face1, emissiveBlockLight);
         tileModel.setBlocklight(face2, emissiveBlockLight);
-
-        // ####### sunlight
-        tileModel.setSunlight(face1, sunLight);
-        tileModel.setSunlight(face2, sunLight);
-
-        // ######## AO
-        float ao0 = 1f, ao1 = 1f, ao2 = 1f, ao3 = 1f;
-        if (modelResource.isAmbientocclusion()){
-            ao0 = testAo(c0, faceDir);
-            ao1 = testAo(c1, faceDir);
-            ao2 = testAo(c2, faceDir);
-            ao3 = testAo(c3, faceDir);
-        }
-
-        tileModel.setAOs(face1, ao0, ao1, ao2);
-        tileModel.setAOs(face2, ao0, ao2, ao3);
-
-        //if is top face set model-color
-        float a = faceRotationVector.y;
-        if (a > 0.01 && texturePath != null) {
-            Texture texture = texturePath.getResource(resourcePack::getTexture);
-            if (texture != null) {
-                mapColor.set(texture.getColorPremultiplied());
-                if (tintColor.a >= 0) {
-                    mapColor.multiply(tintColor);
-                }
-
-                // apply light
-                float combinedLight = Math.max(sunLight / 15f, blockLight / 15f);
-                combinedLight = (1 - renderSettings.getAmbientLight()) * combinedLight + renderSettings.getAmbientLight();
-                mapColor.r *= combinedLight;
-                mapColor.g *= combinedLight;
-                mapColor.b *= combinedLight;
-
-                if (mapColor.a > blockColorOpacity)
-                    blockColorOpacity = mapColor.a;
-
-                blockColor.add(mapColor);
-            }
-        }
+        tileModel.setSunlight(face1, faceLight.skyLight);
+        tileModel.setSunlight(face2, faceLight.skyLight);
     }
+
+    /**
+     * Calculates and applies ambient occlusion to the model faces.
+     */
+    private void applyAmbientOcclusion(int face1, int face2, VectorM3f c0, VectorM3f c1, VectorM3f c2, VectorM3f c3, Direction dir) {
+        float ao0 = 1f, ao1 = 1f, ao2 = 1f, ao3 = 1f;
+        if (modelResource.isAmbientocclusion()) {
+            ao0 = testAo(c0, dir);
+            ao1 = testAo(c1, dir);
+            ao2 = testAo(c2, dir);
+            ao3 = testAo(c3, dir);
+        }
+        blockModel.getTileModel().setAOs(face1, ao0, ao1, ao2);
+        blockModel.getTileModel().setAOs(face2, ao0, ao2, ao3);
+    }
+
+    /**
+     * Updates the aggregate map color if the face is pointing upwards.
+     */
+    private void updateMapColor(ResourcePath<Texture> texturePath, VectorM3f faceRotationVec, FaceLight faceLight) {
+        if (faceRotationVec.y <= 0.01 || texturePath == null) return;
+
+        Texture texture = texturePath.getResource(resourcePack::getTexture);
+        if (texture == null) return;
+
+        mapColor.set(texture.getColorPremultiplied());
+        if (tintColor.a >= 0) {
+            mapColor.multiply(tintColor);
+        }
+
+        // Apply light
+        float combinedLight = Math.max(faceLight.skyLight / 15f, faceLight.blockLight / 15f);
+        combinedLight = (1 - renderSettings.getAmbientLight()) * combinedLight + renderSettings.getAmbientLight();
+        mapColor.r *= combinedLight;
+        mapColor.g *= combinedLight;
+        mapColor.b *= combinedLight;
+
+        if (mapColor.a > blockColorOpacity) {
+            blockColorOpacity = mapColor.a;
+        }
+
+        blockColor.add(mapColor);
+    }
+
+    // endregion
+    // =================================================================================================================
+
 
     private ExtendedBlock getRotationRelativeBlock(Direction direction){
         return getRotationRelativeBlock(direction.toVector());
