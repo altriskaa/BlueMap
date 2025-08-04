@@ -1,0 +1,6 @@
+projectKey=BlueMap
+serverUrl=http://localhost:9000
+serverVersion=25.5.0.107428
+dashboardUrl=http://localhost:9000/dashboard?id=BlueMap
+ceTaskId=23a1834e-9b87-4278-b66d-6eba12e6f47d
+ceTaskUrl=http://localhost:9000/api/ce/task?id=23a1834e-9b87-4278-b66d-6eba12e6f47d
