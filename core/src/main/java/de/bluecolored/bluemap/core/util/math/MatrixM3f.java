@@ -32,48 +32,34 @@ public class MatrixM3f {
     public float m10, m11 = 1f, m12;
     public float m20, m21, m22 = 1f;
 
-    public MatrixM3f set(
-            float m00, float m01, float m02,
-            float m10, float m11, float m12,
-            float m20, float m21, float m22
-    ) {
-        this.m00 = m00; this.m01 = m01; this.m02 = m02;
-        this.m10 = m10; this.m11 = m11; this.m12 = m12;
-        this.m20 = m20; this.m21 = m21; this.m22 = m22;
+    public MatrixM3f set(Matrix3x3 mat) {
+        this.m00 = mat.m00; this.m01 = mat.m01; this.m02 = mat.m02;
+        this.m10 = mat.m10; this.m11 = mat.m11; this.m12 = mat.m12;
+        this.m20 = mat.m20; this.m21 = mat.m21; this.m22 = mat.m22;
         return this;
     }
 
     public MatrixM3f invert() {
         float det = determinant();
-        return set(
+        Matrix3x3 inverse = new Matrix3x3(new float[]{
                 (m11 * m22 - m21 * m12) / det, -(m01 * m22 - m21 * m02) / det, (m01 * m12 - m02 * m11) / det,
                 -(m10 * m22 - m20 * m12) / det, (m00 * m22 - m20 * m02) / det, -(m00 * m12 - m10 * m02) / det,
                 (m10 * m21 - m20 * m11) / det, -(m00 * m21 - m20 * m01) / det, (m00 * m11 - m01 * m10) / det
-        );
+        });
+
+        return set(inverse);
     }
 
     public MatrixM3f identity() {
-        return set(
-                1f, 0f, 0f,
-                0f, 1f, 0f,
-                0f, 0f, 1f
-        );
+        return set(Matrix3x3.identity());
     }
 
     public MatrixM3f scale(float x, float y, float z) {
-        return multiplyTo(
-                x, 0f, 0f,
-                0f, y, 0f,
-                0f, 0f, z
-        );
+        return multiplyTo(Matrix3x3.scale(x,y,z));
     }
 
     public MatrixM3f translate(float x, float y) {
-        return multiplyTo(
-                1f, 0f, x,
-                0f, 1f, y,
-                0f, 0f, 1f
-        );
+        return multiplyTo(Matrix3x3.translation(x,y));
     }
 
     public MatrixM3f rotate(float angle, float axisX, float axisY, float axisZ) {
@@ -130,7 +116,7 @@ public class MatrixM3f {
     }
 
     public MatrixM3f rotateByQuaternion(float qx, float qy, float qz, float qw) {
-        return multiplyTo(
+        Matrix3x3 rotationMatrix = new Matrix3x3(new float[]{
                 1 - 2 * qy * qy - 2 * qz * qz,
                 2 * qx * qy - 2 * qw * qz,
                 2 * qx * qz + 2 * qw * qy,
@@ -140,43 +126,37 @@ public class MatrixM3f {
                 2 * qx * qz - 2 * qw * qy,
                 2 * qy * qz + 2 * qx * qw,
                 1 - 2 * qx * qx - 2 * qy * qy
-        );
+        });
+
+        return multiplyTo(rotationMatrix);
     }
 
-    public MatrixM3f multiply(
-            float m00, float m01, float m02,
-            float m10, float m11, float m12,
-            float m20, float m21, float m22
-    ) {
-        return set (
-                this.m00 * m00 + this.m01 * m10 + this.m02 * m20,
-                this.m00 * m01 + this.m01 * m11 + this.m02 * m21,
-                this.m00 * m02 + this.m01 * m12 + this.m02 * m22,
-                this.m10 * m00 + this.m11 * m10 + this.m12 * m20,
-                this.m10 * m01 + this.m11 * m11 + this.m12 * m21,
-                this.m10 * m02 + this.m11 * m12 + this.m12 * m22,
-                this.m20 * m00 + this.m21 * m10 + this.m22 * m20,
-                this.m20 * m01 + this.m21 * m11 + this.m22 * m21,
-                this.m20 * m02 + this.m21 * m12 + this.m22 * m22
-        );
+    public MatrixM3f multiply(Matrix3x3 mat) {
+        return set(new Matrix3x3(new float[]{
+                this.m00 * mat.m00 + this.m01 * mat.m10 + this.m02 * mat.m20,
+                this.m00 * mat.m01 + this.m01 * mat.m11 + this.m02 * mat.m21,
+                this.m00 * mat.m02 + this.m01 * mat.m12 + this.m02 * mat.m22,
+                this.m10 * mat.m00 + this.m11 * mat.m10 + this.m12 * mat.m20,
+                this.m10 * mat.m01 + this.m11 * mat.m11 + this.m12 * mat.m21,
+                this.m10 * mat.m02 + this.m11 * mat.m12 + this.m12 * mat.m22,
+                this.m20 * mat.m00 + this.m21 * mat.m10 + this.m22 * mat.m20,
+                this.m20 * mat.m01 + this.m21 * mat.m11 + this.m22 * mat.m21,
+                this.m20 * mat.m02 + this.m21 * mat.m12 + this.m22 * mat.m22
+        }));
     }
 
-    public MatrixM3f multiplyTo(
-            float m00, float m01, float m02,
-            float m10, float m11, float m12,
-            float m20, float m21, float m22
-    ) {
-        return set (
-                m00 * this.m00 + m01 * this.m10 + m02 * this.m20,
-                m00 * this.m01 + m01 * this.m11 + m02 * this.m21,
-                m00 * this.m02 + m01 * this.m12 + m02 * this.m22,
-                m10 * this.m00 + m11 * this.m10 + m12 * this.m20,
-                m10 * this.m01 + m11 * this.m11 + m12 * this.m21,
-                m10 * this.m02 + m11 * this.m12 + m12 * this.m22,
-                m20 * this.m00 + m21 * this.m10 + m22 * this.m20,
-                m20 * this.m01 + m21 * this.m11 + m22 * this.m21,
-                m20 * this.m02 + m21 * this.m12 + m22 * this.m22
-        );
+    public MatrixM3f multiplyTo(Matrix3x3 mat) {
+        return set(new Matrix3x3(new float[]{
+                mat.m00 * this.m00 + mat.m01 * this.m10 + mat.m02 * this.m20,
+                mat.m00 * this.m01 + mat.m01 * this.m11 + mat.m02 * this.m21,
+                mat.m00 * this.m02 + mat.m01 * this.m12 + mat.m02 * this.m22,
+                mat.m10 * this.m00 + mat.m11 * this.m10 + mat.m12 * this.m20,
+                mat.m10 * this.m01 + mat.m11 * this.m11 + mat.m12 * this.m21,
+                mat.m10 * this.m02 + mat.m11 * this.m12 + mat.m12 * this.m22,
+                mat.m20 * this.m00 + mat.m21 * this.m10 + mat.m22 * this.m20,
+                mat.m20 * this.m01 + mat.m21 * this.m11 + mat.m22 * this.m21,
+                mat.m20 * this.m02 + mat.m21 * this.m12 + mat.m22 * this.m22
+        }));
     }
 
     public float determinant() {
