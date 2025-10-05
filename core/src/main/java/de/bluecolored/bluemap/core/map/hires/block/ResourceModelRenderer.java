@@ -170,12 +170,14 @@ public class ResourceModelRenderer implements BlockRenderer {
 
     private final VectorM3f faceRotationVector = new VectorM3f(0, 0, 0);
 
-    // =================================================================================================================
-    // region ## REFACTORED createElementFace AND HELPERS ##
-    //
-    // Code Smell Code [java:S6541] Brain Method
-    // single-responsibility methods to reduce complexity and improve readability.
-    // =================================================================================================================
+    /**
+     * =================================================================================================================
+     * region ## REFACTORED createElementFace AND HELPERS ##
+     *
+     * Code Smell Code [java:S6541] Brain Method
+     * single-responsibility methods to reduce complexity and improve readability.
+     * =================================================================================================================
+     */
 
     /**
      * A simple data class to hold sky and block light values together.

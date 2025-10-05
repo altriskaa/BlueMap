@@ -58,82 +58,110 @@ public class HiresModelRenderer {
         render(world, modelMin, modelMax, model, (x, z, c, h, l) -> {});
     }
 
+    /**
+     * =================================================================================================================
+     * region ## REFACTORED render AND HELPERS ##
+     * Code Smell Code [java:S3776] High Cognitive complexity (36 CogC)
+     * Refactor method: Extract method
+     * =================================================================================================================
+     */
+
     public void render(World world, Vector3i modelMin, Vector3i modelMax, TileModel tileModel, TileMetaConsumer tileMetaConsumer) {
         try {
             Vector3i min = modelMin.max(renderSettings.getMinPos());
             Vector3i max = modelMax.min(renderSettings.getMaxPos());
             Vector3i modelAnchor = new Vector3i(modelMin.getX(), 0, modelMin.getZ());
 
-            // render blocks
             BlockStateModelRenderer blockRenderer = threadLocalBlockRenderer.get();
             EntityModelRenderer entityRenderer = threadLocalEntityRenderer.get();
-
-            int maxHeight, minY, maxY;
-            double topBlockLight;
-            Color columnColor = new Color(), blockColor = new Color();
             BlockNeighborhood block = new BlockNeighborhood(new Block(world, 0, 0, 0), resourcePack, renderSettings, world.getDimensionType());
             TileModelView tileModelView = new TileModelView(tileModel);
 
-            int x, y, z;
-            for (x = modelMin.getX(); x <= modelMax.getX(); x++) {
-                for (z = modelMin.getZ(); z <= modelMax.getZ(); z++) {
+            RenderContext renderCtx = new RenderContext(tileModelView, blockRenderer, block, renderSettings);
+            renderBlockColumns(world, min, max, modelAnchor, renderCtx, tileMetaConsumer);
+            renderEntities(world, min, max, modelAnchor, tileModelView, entityRenderer, block);
 
-                    maxHeight = Integer.MIN_VALUE;
-                    topBlockLight = 0;
-
-                    columnColor.set(0, 0, 0, 0, true);
-
-                    if (renderSettings.isInsideRenderBoundaries(x, z)) {
-                        Chunk chunk = world.getChunkAtBlock(x, z);
-                        minY = Math.max(min.getY(), chunk.getMinY(x, z));
-                        maxY = Math.min(max.getY(), chunk.getMaxY(x, z));
-
-                        for (y = maxY; y >= minY; y--) {
-                            block.set(x, y, z);
-                            if (!block.isInsideRenderBounds()) continue;
-
-                            tileModelView.initialize();
-
-                            blockRenderer.render(block, tileModelView, blockColor);
-
-                            //update topBlockLight
-                            topBlockLight = Math.max(topBlockLight, block.getBlockLightLevel() * (1 - columnColor.a));
-
-                            // move block-model to correct position
-                            tileModelView.translate(x - modelAnchor.getX(), y - modelAnchor.getY(), z - modelAnchor.getZ());
-
-                            //update color and height (only if not 100% translucent)
-                            if (blockColor.a > 0) {
-                                if (maxHeight < y) maxHeight = y;
-                                columnColor.underlay(blockColor.premultiplied());
-                            }
-
-                            if (renderSettings.isRenderTopOnly() && blockColor.a > 0.999 && block.getProperties().isCulling())
-                                break;
-                        }
-                    }
-
-                    if (maxHeight == Integer.MIN_VALUE)
-                        maxHeight = 0;
-
-                    tileMetaConsumer.set(x, z, columnColor, maxHeight, (int) topBlockLight);
-                }
-            }
-
-            // render entities
-            world.iterateEntities(min.getX(), min.getZ(), max.getX(), max.getZ(), entity -> {
-                Vector3d pos = entity.getPos();
-                block.set(pos.getFloorX(), pos.getFloorY(), pos.getFloorZ());
-                entityRenderer.render(entity, block, tileModelView.initialize());
-                tileModelView.translate(
-                        (float) pos.getX() - modelAnchor.getX(),
-                        (float) pos.getY() - modelAnchor.getY(),
-                        (float) pos.getZ() - modelAnchor.getZ()
-                );
-            });
         } catch (MaxCapacityReachedException ex) {
             Logger.global.noFloodWarning("max-capacity-reached",
                     "One or more map-tiles are too complex to be completed (@~ %s to %s): %s".formatted(modelMin, modelMax, ex));
         }
     }
+
+    /* ---------- Helpers and Extracted Methods ---------- */
+
+    private record ColumnContext(int x, int z, Vector3i min, Vector3i max, Vector3i modelAnchor) {}
+
+    private record RenderContext(TileModelView tileModelView, BlockStateModelRenderer blockRenderer,
+                                 BlockNeighborhood block, RenderSettings renderSettings) {}
+
+    private void renderBlockColumns(World world, Vector3i min, Vector3i max, Vector3i modelAnchor,
+                                    RenderContext ctx, TileMetaConsumer tileMetaConsumer) {
+        for (int x = min.getX(); x <= max.getX(); x++) {
+            for (int z = min.getZ(); z <= max.getZ(); z++) {
+                ColumnContext colCtx = new ColumnContext(x, z, min, max, modelAnchor);
+                renderBlocksInColumn(world, colCtx, ctx, tileMetaConsumer);
+            }
+        }
+    }
+
+    private void renderBlocksInColumn(World world, ColumnContext colCtx, RenderContext ctx, TileMetaConsumer tileMetaConsumer) {
+        int maxHeight = Integer.MIN_VALUE;
+        double topBlockLight = 0;
+        Color columnColor = new Color();
+        Color blockColor = new Color();
+        columnColor.set(0, 0, 0, 0, true);
+
+        int x = colCtx.x();
+        int z = colCtx.z();
+
+        if (!ctx.renderSettings().isInsideRenderBoundaries(x, z)) {
+            tileMetaConsumer.set(x, z, columnColor, 0, 0);
+            return;
+        }
+
+        Chunk chunk = world.getChunkAtBlock(x, z);
+        int minY = Math.max(colCtx.min().getY(), chunk.getMinY(x, z));
+        int maxY = Math.min(colCtx.max().getY(), chunk.getMaxY(x, z));
+
+        for (int y = maxY; y >= minY; y--) {
+            boolean stop = renderBlockAtY(x, y, z, colCtx.modelAnchor(), ctx, columnColor, blockColor);
+            maxHeight = Math.max(maxHeight, y);
+            topBlockLight = Math.max(topBlockLight, ctx.block().getBlockLightLevel() * (1 - columnColor.a));
+            if (stop) break; // stop rendering below opaque block if "render top only" mode
+        }
+
+        if (maxHeight == Integer.MIN_VALUE) maxHeight = 0;
+        tileMetaConsumer.set(x, z, columnColor, maxHeight, (int) topBlockLight);
+    }
+
+    private boolean renderBlockAtY(int x, int y, int z, Vector3i modelAnchor, RenderContext ctx, Color columnColor, Color blockColor) {
+        ctx.block().set(x, y, z);
+        if (!ctx.block().isInsideRenderBounds()) return false;
+
+        ctx.tileModelView().initialize();
+        ctx.blockRenderer().render(ctx.block(), ctx.tileModelView(), blockColor);
+
+        ctx.tileModelView().translate(x - modelAnchor.getX(), y - modelAnchor.getY(), z - modelAnchor.getZ());
+
+        if (blockColor.a > 0) {
+            columnColor.underlay(blockColor.premultiplied());
+        }
+
+        return ctx.renderSettings().isRenderTopOnly() && blockColor.a > 0.999 && ctx.block().getProperties().isCulling(); // signal to stop rendering further down
+    }
+
+    private void renderEntities(World world, Vector3i min, Vector3i max, Vector3i modelAnchor,
+                                TileModelView tileModelView, EntityModelRenderer entityRenderer, BlockNeighborhood block) {
+        world.iterateEntities(min.getX(), min.getZ(), max.getX(), max.getZ(), entity -> {
+            Vector3d pos = entity.getPos();
+            block.set(pos.getFloorX(), pos.getFloorY(), pos.getFloorZ());
+            entityRenderer.render(entity, block, tileModelView.initialize());
+            tileModelView.translate(
+                    (float) pos.getX() - modelAnchor.getX(),
+                    (float) pos.getY() - modelAnchor.getY(),
+                    (float) pos.getZ() - modelAnchor.getZ()
+            );
+        });
+    }
+
 }
