@@ -26,6 +26,7 @@ package de.bluecolored.bluemap.core.resources.pack;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonSyntaxException;
 import de.bluecolored.bluemap.core.logger.Logger;
 import de.bluecolored.bluemap.core.resources.ResourcePath;
 import de.bluecolored.bluemap.core.resources.adapter.ResourcesGson;
@@ -61,68 +62,130 @@ public abstract class Pack {
 
     public abstract void loadResources(Iterable<Path> roots) throws IOException, InterruptedException;
 
-    protected void loadResourcePath(Path root, ResourcePack.PathLoader resourceLoader) throws IOException, InterruptedException {
+    /**
+     * =================================================================================================================
+     * region ## REFACTORED render AND HELPERS ##
+     * Code Smell Code:
+     * [java:S3776] High Cognitive complexity (45 CogC)
+     * [java:S6541] Brain Method: 82 LOC, 16 Complexity, 6 Nesting, 25 Num of Variables
+     * Refactor method: Extract method
+     * =================================================================================================================
+     */
+
+    /**
+     * The main entry point for loading resources from a given path.
+     * It coordinates the loading process by delegating to specialized helper methods.
+     */
+    protected void loadResourcePath(Path root, Pack.PathLoader resourceLoader) throws IOException, InterruptedException {
         if (Thread.interrupted()) throw new InterruptedException();
+
         if (!Files.isDirectory(root)) {
-            try (FileSystem fileSystem = FileSystems.newFileSystem(root, (ClassLoader) null)) {
-                for (Path fsRoot : fileSystem.getRootDirectories()) {
-                    if (!Files.isDirectory(fsRoot)) continue;
-                    loadResourcePath(fsRoot, resourceLoader);
-                }
-            } catch (Exception ex) {
-                Logger.global.logDebug("Failed to read '" + root + "': " + ex);
-            }
+            loadFromArchive(root, resourceLoader);
             return;
         }
 
-        // load nested jars from fabric.mod.json if present
-        Path fabricModJson = root.resolve("fabric.mod.json");
-        if (Files.isRegularFile(fabricModJson)) {
-            try (BufferedReader reader = Files.newBufferedReader(fabricModJson)) {
-                JsonObject rootElement = ResourcesGson.INSTANCE.fromJson(reader, JsonObject.class);
-                if (rootElement.has("jars")) {
-                    for (JsonElement element : rootElement.getAsJsonArray("jars")) {
-                        Path file = root.resolve(element.getAsJsonObject().get("file").getAsString());
-                        if (Files.exists(file)) {
-                            try {
-                                loadResourcePath(file, resourceLoader);
-                            } catch (Exception ex) {
-                                Logger.global.logDebug("Failed to read '" + root + "': " + ex);
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ex) {
-                Logger.global.logDebug("Failed to read fabric.mod.json: " + ex);
-            }
+        loadNestedFabricJars(root, resourceLoader);
+
+        PackMeta packMeta = loadPackMeta(root);
+
+        if (featuresAreMissing(packMeta)) {
+            logSkippedPack(root, packMeta);
+            return;
         }
 
-        // load pack-meta
-        PackMeta packMeta;
+        loadNestedDatapacks(root, resourceLoader);
+        loadOverlays(root, packMeta, resourceLoader);
+
+        resourceLoader.load(root);
+    }
+
+    /**
+     * Handles loading from archive files like .zip or .jar.
+     */
+    private void loadFromArchive(Path archivePath, Pack.PathLoader resourceLoader) throws InterruptedException {
+        try (FileSystem fileSystem = FileSystems.newFileSystem(archivePath, (ClassLoader) null)) {
+            for (Path fsRoot : fileSystem.getRootDirectories()) {
+                if (Files.isDirectory(fsRoot)) {
+                    loadResourcePath(fsRoot, resourceLoader);
+                }
+            }
+        } catch (IOException ex) {
+            // This is the corrected block
+            Logger.global.logDebug("Failed to read archive '" + archivePath + "': " + ex);
+        }
+    }
+
+    /**
+     * Loads nested .jar files specified in a fabric.mod.json file.
+     */
+    private void loadNestedFabricJars(Path root, Pack.PathLoader resourceLoader) throws InterruptedException {
+        Path fabricModJson = root.resolve("fabric.mod.json");
+        if (!Files.isRegularFile(fabricModJson)) return;
+
+        try (BufferedReader reader = Files.newBufferedReader(fabricModJson)) {
+            JsonObject rootElement = ResourcesGson.INSTANCE.fromJson(reader, JsonObject.class);
+            if (rootElement.has("jars")) {
+                for (JsonElement element : rootElement.getAsJsonArray("jars")) {
+                    Path file = root.resolve(element.getAsJsonObject().get("file").getAsString());
+                    if (Files.exists(file)) {
+                        loadNestedJar(file, resourceLoader);
+                    }
+                }
+            }
+        } catch (IOException | JsonSyntaxException ex) {
+            Logger.global.logDebug("Failed to read fabric.mod.json: " + ex);
+        }
+    }
+
+    /**
+     * Tries to load a single nested jar file, handling potential exceptions.
+     */
+    private void loadNestedJar(Path jarPath, Pack.PathLoader resourceLoader) throws InterruptedException {
+        try {
+            loadResourcePath(jarPath, resourceLoader);
+        } catch (IOException ex) {
+            Logger.global.logDebug("Failed to read nested jar '" + jarPath + "': " + ex);
+        }
+    }
+
+    /**
+     * Loads and parses the pack.mcmeta file. Returns a default PackMeta if not found or on error.
+     */
+    private PackMeta loadPackMeta(Path root) {
         Path packMetaFile = root.resolve("pack.mcmeta");
         if (Files.isRegularFile(packMetaFile)) {
             try (BufferedReader reader = Files.newBufferedReader(packMetaFile)) {
-                packMeta = ResourcesGson.INSTANCE.fromJson(reader, PackMeta.class);
+                return ResourcesGson.INSTANCE.fromJson(reader, PackMeta.class);
             } catch (Exception ex) {
                 Logger.global.logDebug("Failed to read pack.mcmeta: " + ex);
-                packMeta = new PackMeta();
             }
-        } else {
-            packMeta = new PackMeta();
         }
+        return new PackMeta();
+    }
 
-        // stop loading pack if feature is not enabled
-        if (enabledFeatures != null && !enabledFeatures.containsAll(packMeta.getFeatures().getEnabled())) {
-            Logger.global.logDebug("Skipping resources from '%s' because not all required features (%s) are enabled (%s)"
-                    .formatted(
-                            root,
-                            Arrays.toString(packMeta.getFeatures().getEnabled().toArray()),
-                            Arrays.toString(enabledFeatures.toArray())
-                    ));
-            return;
-        }
+    /**
+     * Checks if the pack requires features that are not enabled.
+     */
+    private boolean featuresAreMissing(PackMeta packMeta) {
+        return enabledFeatures != null && !enabledFeatures.containsAll(packMeta.getFeatures().getEnabled());
+    }
 
-        // load nested datapacks
+    /**
+     * Logs a debug message for a pack that was skipped due to missing features.
+     */
+    private void logSkippedPack(Path root, PackMeta packMeta) {
+        Logger.global.logDebug("Skipping resources from '%s' because not all required features (%s) are enabled (%s)"
+                .formatted(
+                        root,
+                        Arrays.toString(packMeta.getFeatures().getEnabled().toArray()),
+                        Arrays.toString(enabledFeatures.toArray())
+                ));
+    }
+
+    /**
+     * Scans for and loads nested datapacks.
+     */
+    private void loadNestedDatapacks(Path root, Pack.PathLoader resourceLoader) {
         list(root.resolve("data"))
                 .map(namespaceRoot -> namespaceRoot.resolve("datapacks"))
                 .filter(Files::isDirectory)
@@ -130,12 +193,21 @@ public abstract class Pack {
                 .forEach(nestedPack -> {
                     try {
                         loadResourcePath(nestedPack, resourceLoader);
-                    } catch (Exception ex) {
+                    } catch (InterruptedException ex) {
+                        // Restore the interrupted status
+                        Thread.currentThread().interrupt();
+                        Logger.global.logDebug("Interrupted while loading nested datapack '" + nestedPack + "'");
+                    } catch (IOException ex) {
+                        // Log other IO exceptions normally
                         Logger.global.logDebug("Failed to load nested datapack '" + nestedPack + "': " + ex);
                     }
                 });
+    }
 
-        // load overlays
+    /**
+     * Loads overlays specified in the pack metadata, in reverse order.
+     */
+    private void loadOverlays(Path root, PackMeta packMeta, Pack.PathLoader resourceLoader) throws InterruptedException {
         PackMeta.Overlay[] overlays = packMeta.getOverlays().getEntries();
         for (int i = overlays.length - 1; i >= 0; i--) {
             PackMeta.Overlay overlay = overlays[i];
@@ -145,14 +217,12 @@ public abstract class Pack {
                 if (Files.exists(overlayRoot)) {
                     try {
                         loadResourcePath(overlayRoot, resourceLoader);
-                    } catch (Exception ex) {
+                    } catch (IOException ex) {
                         Logger.global.logDebug("Failed to load overlay '" + overlayRoot + "': " + ex);
                     }
                 }
             }
         }
-
-        resourceLoader.load(root);
     }
 
     protected <T> void loadResource(Path root, Path file, int namespacePos, int valuePos, Loader<T> loader, Map<? super ResourcePath<T>, T> resultMap) {
