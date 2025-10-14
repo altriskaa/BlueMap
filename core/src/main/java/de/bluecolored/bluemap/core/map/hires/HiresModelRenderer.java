@@ -58,6 +58,14 @@ public class HiresModelRenderer {
         render(world, modelMin, modelMax, model, (x, z, c, h, l) -> {});
     }
 
+    /**
+     * =========================================== START SECTION =======================================================
+     * Code smell on "render" method is COMPLEX METHOD/LONG METHOD.
+     * CS description from SonarQube:
+     * - Refactor this method to reduce its Cognitive Complexity from 36 to the 15 allowed.
+     * =================================================================================================================
+     */
+
     public void render(World world, Vector3i modelMin, Vector3i modelMax, TileModel tileModel, TileMetaConsumer tileMetaConsumer) {
         try {
             Vector3i min = modelMin.max(renderSettings.getMinPos());
@@ -136,4 +144,9 @@ public class HiresModelRenderer {
                     "One or more map-tiles are too complex to be completed (@~ %s to %s): %s".formatted(modelMin, modelMax, ex));
         }
     }
+
+    /**
+     * ============================================ END SECTION ========================================================
+     */
+
 }

@@ -61,6 +61,15 @@ public abstract class Pack {
 
     public abstract void loadResources(Iterable<Path> roots) throws IOException, InterruptedException;
 
+    /**
+     * =========================================== START SECTION =======================================================
+     * Code smells on "loadResourcePath" method is COMPLEX METHOD/LONG METHOD.
+     * CS description from SonarQube:
+     * - A "Brain Method" was detected. Refactor it to reduce at least one of the following metrics: LOC from 82 to 64, Complexity from 16 to 14, Nesting Level from 6 to 2, Number of Variables from 25 to 6.
+     * - Refactor this method to reduce its Cognitive Complexity from 45 to the 15 allowed.
+     * =================================================================================================================
+     */
+
     protected void loadResourcePath(Path root, ResourcePack.PathLoader resourceLoader) throws IOException, InterruptedException {
         if (Thread.interrupted()) throw new InterruptedException();
         if (!Files.isDirectory(root)) {
@@ -154,6 +163,10 @@ public abstract class Pack {
 
         resourceLoader.load(root);
     }
+
+    /**
+     * ============================================ END SECTION ========================================================
+     */
 
     protected <T> void loadResource(Path root, Path file, int namespacePos, int valuePos, Loader<T> loader, Map<? super ResourcePath<T>, T> resultMap) {
         try {

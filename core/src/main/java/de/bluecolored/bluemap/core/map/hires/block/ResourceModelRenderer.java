@@ -169,6 +169,16 @@ public class ResourceModelRenderer implements BlockRenderer {
     }
 
     private final VectorM3f faceRotationVector = new VectorM3f(0, 0, 0);
+
+    /**
+     * =========================================== START SECTION =======================================================
+     * Code smell on "createElementFace" method is COMPLEX METHOD/LONG METHOD.
+     * CS description from SonarQube:
+     * - A "Brain Method" was detected. Refactor it to reduce at least one of the following metrics: LOC from 130 to 64, Complexity from 25 to 14, Nesting Level from 3 to 2, Number of Variables from 41 to 6.
+     * - Refactor this method to reduce its Cognitive Complexity from 34 to the 15 allowed.
+     * =================================================================================================================
+     */
+
     private void createElementFace(Element element, Direction faceDir, VectorM3f c0, VectorM3f c1, VectorM3f c2, VectorM3f c3) {
         Face face = element.getFaces().get(faceDir);
         if (face == null) return;
@@ -345,6 +355,10 @@ public class ResourceModelRenderer implements BlockRenderer {
             }
         }
     }
+
+    /**
+     * ============================================ END SECTION ========================================================
+     */
 
     private ExtendedBlock getRotationRelativeBlock(Direction direction){
         return getRotationRelativeBlock(direction.toVector());

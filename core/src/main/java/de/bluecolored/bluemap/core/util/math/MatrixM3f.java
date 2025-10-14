@@ -32,6 +32,14 @@ public class MatrixM3f {
     public float m10, m11 = 1f, m12;
     public float m20, m21, m22 = 1f;
 
+    /**
+     * =========================================== START SECTION =======================================================
+     * Code smell on "set", "multiply", and "multiplyTo" method is LONG PARAMETER LIST.
+     * CS description from SonarQube:
+     * - Method has 9 parameters, which is greater than 7 authorized.
+     * =================================================================================================================
+     */
+
     public MatrixM3f set(
             float m00, float m01, float m02,
             float m10, float m11, float m12,
@@ -41,6 +49,42 @@ public class MatrixM3f {
         this.m10 = m10; this.m11 = m11; this.m12 = m12;
         this.m20 = m20; this.m21 = m21; this.m22 = m22;
         return this;
+    }
+
+    public MatrixM3f multiply(
+            float m00, float m01, float m02,
+            float m10, float m11, float m12,
+            float m20, float m21, float m22
+    ) {
+        return set (
+                this.m00 * m00 + this.m01 * m10 + this.m02 * m20,
+                this.m00 * m01 + this.m01 * m11 + this.m02 * m21,
+                this.m00 * m02 + this.m01 * m12 + this.m02 * m22,
+                this.m10 * m00 + this.m11 * m10 + this.m12 * m20,
+                this.m10 * m01 + this.m11 * m11 + this.m12 * m21,
+                this.m10 * m02 + this.m11 * m12 + this.m12 * m22,
+                this.m20 * m00 + this.m21 * m10 + this.m22 * m20,
+                this.m20 * m01 + this.m21 * m11 + this.m22 * m21,
+                this.m20 * m02 + this.m21 * m12 + this.m22 * m22
+        );
+    }
+
+    public MatrixM3f multiplyTo(
+            float m00, float m01, float m02,
+            float m10, float m11, float m12,
+            float m20, float m21, float m22
+    ) {
+        return set (
+                m00 * this.m00 + m01 * this.m10 + m02 * this.m20,
+                m00 * this.m01 + m01 * this.m11 + m02 * this.m21,
+                m00 * this.m02 + m01 * this.m12 + m02 * this.m22,
+                m10 * this.m00 + m11 * this.m10 + m12 * this.m20,
+                m10 * this.m01 + m11 * this.m11 + m12 * this.m21,
+                m10 * this.m02 + m11 * this.m12 + m12 * this.m22,
+                m20 * this.m00 + m21 * this.m10 + m22 * this.m20,
+                m20 * this.m01 + m21 * this.m11 + m22 * this.m21,
+                m20 * this.m02 + m21 * this.m12 + m22 * this.m22
+        );
     }
 
     public MatrixM3f invert() {
@@ -75,6 +119,24 @@ public class MatrixM3f {
                 0f, 0f, 1f
         );
     }
+
+    public MatrixM3f rotateByQuaternion(float qx, float qy, float qz, float qw) {
+        return multiplyTo(
+                1 - 2 * qy * qy - 2 * qz * qz,
+                2 * qx * qy - 2 * qw * qz,
+                2 * qx * qz + 2 * qw * qy,
+                2 * qx * qy + 2 * qw * qz,
+                1 - 2 * qx * qx - 2 * qz * qz,
+                2 * qy * qz - 2 * qw * qx,
+                2 * qx * qz - 2 * qw * qy,
+                2 * qy * qz + 2 * qx * qw,
+                1 - 2 * qx * qx - 2 * qy * qy
+        );
+    }
+
+    /**
+     * ============================================ END SECTION ========================================================
+     */
 
     public MatrixM3f rotate(float angle, float axisX, float axisY, float axisZ) {
 
@@ -126,56 +188,6 @@ public class MatrixM3f {
                 (float) (qyA * qw3 - qxA * qz3),
                 (float) (qwA * qz3 + qzA * qw3),
                 (float) (qwA * qw3 - qzA * qz3)
-        );
-    }
-
-    public MatrixM3f rotateByQuaternion(float qx, float qy, float qz, float qw) {
-        return multiplyTo(
-                1 - 2 * qy * qy - 2 * qz * qz,
-                2 * qx * qy - 2 * qw * qz,
-                2 * qx * qz + 2 * qw * qy,
-                2 * qx * qy + 2 * qw * qz,
-                1 - 2 * qx * qx - 2 * qz * qz,
-                2 * qy * qz - 2 * qw * qx,
-                2 * qx * qz - 2 * qw * qy,
-                2 * qy * qz + 2 * qx * qw,
-                1 - 2 * qx * qx - 2 * qy * qy
-        );
-    }
-
-    public MatrixM3f multiply(
-            float m00, float m01, float m02,
-            float m10, float m11, float m12,
-            float m20, float m21, float m22
-    ) {
-        return set (
-                this.m00 * m00 + this.m01 * m10 + this.m02 * m20,
-                this.m00 * m01 + this.m01 * m11 + this.m02 * m21,
-                this.m00 * m02 + this.m01 * m12 + this.m02 * m22,
-                this.m10 * m00 + this.m11 * m10 + this.m12 * m20,
-                this.m10 * m01 + this.m11 * m11 + this.m12 * m21,
-                this.m10 * m02 + this.m11 * m12 + this.m12 * m22,
-                this.m20 * m00 + this.m21 * m10 + this.m22 * m20,
-                this.m20 * m01 + this.m21 * m11 + this.m22 * m21,
-                this.m20 * m02 + this.m21 * m12 + this.m22 * m22
-        );
-    }
-
-    public MatrixM3f multiplyTo(
-            float m00, float m01, float m02,
-            float m10, float m11, float m12,
-            float m20, float m21, float m22
-    ) {
-        return set (
-                m00 * this.m00 + m01 * this.m10 + m02 * this.m20,
-                m00 * this.m01 + m01 * this.m11 + m02 * this.m21,
-                m00 * this.m02 + m01 * this.m12 + m02 * this.m22,
-                m10 * this.m00 + m11 * this.m10 + m12 * this.m20,
-                m10 * this.m01 + m11 * this.m11 + m12 * this.m21,
-                m10 * this.m02 + m11 * this.m12 + m12 * this.m22,
-                m20 * this.m00 + m21 * this.m10 + m22 * this.m20,
-                m20 * this.m01 + m21 * this.m11 + m22 * this.m21,
-                m20 * this.m02 + m21 * this.m12 + m22 * this.m22
         );
     }
 
